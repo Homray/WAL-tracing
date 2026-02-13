@@ -88,6 +88,23 @@ func parseIntQuery(r *http.Request, key string) (int, bool) {
 	return x, true
 }
 
+func readExecContext(r *http.Request, fallback ExecContext) ExecContext {
+	c := fallback
+	if v := r.Header.Get("X-Component"); v != "" {
+		c.Component = v
+	}
+	if v := r.Header.Get("X-Operation"); v != "" {
+		c.Operation = v
+	}
+	if v := r.Header.Get("X-Entity"); v != "" {
+		c.Entity = v
+	}
+	if v := r.Header.Get("X-Trace-Id"); v != "" {
+		c.TraceID = v
+	}
+	return c
+}
+
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
@@ -105,6 +122,16 @@ func (s *Server) ordersCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	execCtx := readExecContext(r, ExecContext{
+		Component: "unknown",
+		Operation: "orders_create",
+		Entity:    "order",
+	})
+	if err := applyContext(ctx, tx, execCtx); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
 	var id int
 	err = tx.QueryRowContext(
 		ctx,
@@ -119,7 +146,6 @@ func (s *Server) ordersCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]any{"id": id})
 }
 
@@ -137,6 +163,16 @@ func (s *Server) ordersUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+
+	execCtx := readExecContext(r, ExecContext{
+		Component: "unknown",
+		Operation: "orders_update",
+		Entity:    "order:" + strconv.Itoa(id),
+	})
+	if err := applyContext(ctx, tx, execCtx); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
 	res, err := tx.ExecContext(ctx,
 		`UPDATE orders
@@ -175,6 +211,16 @@ func (s *Server) ordersDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+
+	execCtx := readExecContext(r, ExecContext{
+		Component: "unknown",
+		Operation: "orders_delete",
+		Entity:    "order:" + strconv.Itoa(id),
+	})
+	if err := applyContext(ctx, tx, execCtx); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
 	res, err := tx.ExecContext(ctx, `DELETE FROM orders WHERE id=$1`, id)
 	if err != nil {
@@ -215,6 +261,16 @@ func (s *Server) executorsCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	execCtx := readExecContext(r, ExecContext{
+		Component: "unknown",
+		Operation: "executors_create",
+		Entity:    "executor",
+	})
+	if err := applyContext(ctx, tx, execCtx); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
 	var id int
 	err = tx.QueryRowContext(ctx,
 		`INSERT INTO executors(name, role, active) VALUES ($1, $2, true) RETURNING id`,
@@ -246,6 +302,16 @@ func (s *Server) executorsUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+
+	execCtx := readExecContext(r, ExecContext{
+		Component: "unknown",
+		Operation: "executors_update",
+		Entity:    "executor:" + strconv.Itoa(id),
+	})
+	if err := applyContext(ctx, tx, execCtx); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
 	res, err := tx.ExecContext(ctx,
 		`UPDATE executors
@@ -284,6 +350,16 @@ func (s *Server) executorsDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	execCtx := readExecContext(r, ExecContext{
+		Component: "unknown",
+		Operation: "executors_delete",
+		Entity:    "executor:" + strconv.Itoa(id),
+	})
+	if err := applyContext(ctx, tx, execCtx); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
 	res, err := tx.ExecContext(ctx, `DELETE FROM executors WHERE id=$1`, id)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -302,7 +378,7 @@ func (s *Server) executorsDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Links ---
+// --- Links (many-to-many) ---
 
 func (s *Server) link(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -319,6 +395,16 @@ func (s *Server) link(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+
+	execCtx := readExecContext(r, ExecContext{
+		Component: "unknown",
+		Operation: "links_link",
+		Entity:    "link:order:" + strconv.Itoa(oid) + ":executor:" + strconv.Itoa(eid),
+	})
+	if err := applyContext(ctx, tx, execCtx); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
 	var tmp int
 	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM orders WHERE id=$1`, oid).Scan(&tmp); err != nil {
@@ -360,6 +446,16 @@ func (s *Server) unlink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+
+	execCtx := readExecContext(r, ExecContext{
+		Component: "unknown",
+		Operation: "links_unlink",
+		Entity:    "link:order:" + strconv.Itoa(oid) + ":executor:" + strconv.Itoa(eid),
+	})
+	if err := applyContext(ctx, tx, execCtx); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
 	_, err = tx.ExecContext(ctx,
 		`DELETE FROM order_executors WHERE order_id=$1 AND executor_id=$2`, oid, eid)

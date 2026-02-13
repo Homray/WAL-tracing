@@ -23,6 +23,18 @@ func mustEnv(key string) string {
 	return v
 }
 
+func ensureHeaders(component string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Component") == "" {
+			r.Header.Set("X-Component", component)
+		}
+		if r.Header.Get("X-Trace-Id") == "" {
+			r.Header.Set("X-Trace-Id", strconv.FormatInt(time.Now().UnixNano(), 16))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (a *App) forwardPost(w http.ResponseWriter, r *http.Request, path string) {
 	u := strings.TrimRight(a.repoURL, "/") + path
 	if r.URL.RawQuery != "" {
@@ -33,6 +45,12 @@ func (a *App) forwardPost(w http.ResponseWriter, r *http.Request, path string) {
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
+	}
+
+	for _, h := range []string{"X-Component", "X-Operation", "X-Entity", "X-Trace-Id"} {
+		if v := r.Header.Get(h); v != "" {
+			req.Header.Set(h, v)
+		}
 	}
 
 	resp, err := a.client.Do(req)
@@ -59,22 +77,30 @@ func parseID(r *http.Request) (int, bool) {
 }
 
 func (a *App) create(w http.ResponseWriter, r *http.Request) {
+	r.Header.Set("X-Operation", "create_executor")
+	r.Header.Set("X-Entity", "executor")
 	a.forwardPost(w, r, "/executors/create")
 }
 
 func (a *App) update(w http.ResponseWriter, r *http.Request) {
-	if _, ok := parseID(r); !ok {
+	id, ok := parseID(r)
+	if !ok {
 		http.Error(w, "bad id", 400)
 		return
 	}
+	r.Header.Set("X-Operation", "update_executor")
+	r.Header.Set("X-Entity", "executor:"+strconv.Itoa(id))
 	a.forwardPost(w, r, "/executors/update")
 }
 
 func (a *App) del(w http.ResponseWriter, r *http.Request) {
-	if _, ok := parseID(r); !ok {
+	id, ok := parseID(r)
+	if !ok {
 		http.Error(w, "bad id", 400)
 		return
 	}
+	r.Header.Set("X-Operation", "delete_executor")
+	r.Header.Set("X-Entity", "executor:"+strconv.Itoa(id))
 	a.forwardPost(w, r, "/executors/delete")
 }
 
@@ -95,5 +121,5 @@ func main() {
 
 	addr := ":8082"
 	log.Println("executor-service listening on", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	log.Fatal(http.ListenAndServe(addr, ensureHeaders("executor_service", mux)))
 }

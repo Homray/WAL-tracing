@@ -1,10 +1,10 @@
-# WAL tracing demo (no tracing yet)
+# WAL tracing
 
 Сервисы:
 - repo: единственный сервис, который ходит в Postgres и выполняет SQL.
 - order-service: CRUD заказов (проксирует запросы в repo).
 - executor-service: CRUD исполнителей (проксирует запросы в repo).
-- logistics-service: связывает/разрывает связь заказ ↔ исполнитель (проксирует запросы в repo).
+- logistics-service: связывает/разрывает связь заказ-исполнитель (проксирует запросы в repo).
 
 Нагрузчики:
 - loadgen-orders: нагружает order-service
@@ -16,22 +16,24 @@
 docker compose up --build
 ```
 
+## Запуск трассировщика
+```bash
+docker compose run --rm wal-tracer
+```
+
 ## Запуск нагрузчиков
 
 ### loadgen-orders
 ```bash
-cd loadgens/loadgen-orders
 docker compose run --rm loadgen-orders
 ```
 
 ### loadgen-executors
 ```bash
-cd loadgens/loadgen-executors
 docker compose run --rm loadgen-executors
 ```
 
 ### loadgen-logistics
 ```bash
-cd loadgens/loadgen-logistics
 docker compose run --rm loadgen-logistics
 ```
