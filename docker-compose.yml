@@ -26,9 +26,15 @@ services:
     build: ./repo
     environment:
       DB_DSN: postgres://app:app@db:5432/appdb?sslmode=disable
+      WAL_TRACE_SERIALIZE: "1"
+      WAL_TRACE_LOCK_PROJECT: "42"
+      WAL_TRACE_LOCK_ID: "1"
     depends_on:
       db:
         condition: service_healthy
+    ports:
+      - "8090:8090"
+
 
   order-service:
     build: ./order-service

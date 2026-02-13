@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"os"
+	"strconv"
 )
 
 type ExecContext struct {
@@ -25,7 +27,34 @@ func ensureTraceID(c ExecContext) ExecContext {
 	return c
 }
 
+func maybeAcquireWalTraceLock(ctx context.Context, tx *sql.Tx) error {
+	if os.Getenv("WAL_TRACE_SERIALIZE") != "1" {
+		return nil
+	}
+
+	project := 42
+	lockID := 1
+
+	if v := os.Getenv("WAL_TRACE_LOCK_PROJECT"); v != "" {
+		if x, err := strconv.Atoi(v); err == nil {
+			project = x
+		}
+	}
+	if v := os.Getenv("WAL_TRACE_LOCK_ID"); v != "" {
+		if x, err := strconv.Atoi(v); err == nil {
+			lockID = x
+		}
+	}
+
+	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1, $2)`, project, lockID)
+	return err
+}
+
 func applyContext(ctx context.Context, tx *sql.Tx, c ExecContext) error {
+	if err := maybeAcquireWalTraceLock(ctx, tx); err != nil {
+		return err
+	}
+
 	c = ensureTraceID(c)
 
 	stmts := []struct {

@@ -74,11 +74,11 @@ func printReport(
 	sort.Strings(components)
 
 	fmt.Printf(
-		"%-15s %8s %12s %14s %15s %7s\n",
+		"%-17s %8s %12s %14s %15s %7s\n",
 		"Component", "Tx", "WAL(MiB)", "WAL/Tx(KiB)", "WAL/sec(KiB)", "WAL%",
 	)
 
-	fmt.Println(strings.Repeat("-", 76))
+	fmt.Println(strings.Repeat("-", 78))
 
 	nextPrev := make(map[string]RateSnapshot)
 
@@ -111,7 +111,7 @@ func printReport(
 		walPerSec := (float64(delta) / 1024) / sec
 
 		fmt.Printf(
-			"%-15s %8d %12.2f %14.2f %14.1f%% %7.2f\n",
+			"%-17s %8d %12.2f %14.2f %14.1f %7.2f%%\n",
 			c, m.Tx, walMiB, walPerTx, walPerSec, walPct,
 		)
 

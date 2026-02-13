@@ -1,5 +1,7 @@
 # WAL tracing
 
+В приложение добавлена трассировка WAL.
+
 Сервисы:
 - repo: единственный сервис, который ходит в Postgres и выполняет SQL.
 - order-service: CRUD заказов (проксирует запросы в repo).
@@ -14,11 +16,6 @@
 ## Запуск приложения
 ```bash
 docker compose up --build
-```
-
-## Запуск трассировщика
-```bash
-docker compose run --rm wal-tracer
 ```
 
 ## Запуск нагрузчиков
@@ -36,4 +33,9 @@ docker compose run --rm loadgen-executors
 ### loadgen-logistics
 ```bash
 docker compose run --rm loadgen-logistics
+```
+
+## Запуск трассировщика
+```bash
+docker compose run --rm wal-tracer
 ```
