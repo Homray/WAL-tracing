@@ -20,18 +20,15 @@ docker compose up --build
 
 ### loadgen-orders
 ```bash
-cd loadgens/loadgen-orders
 docker compose run --rm loadgen-orders
 ```
 
 ### loadgen-executors
 ```bash
-cd loadgens/loadgen-executors
 docker compose run --rm loadgen-executors
 ```
 
 ### loadgen-logistics
 ```bash
-cd loadgens/loadgen-logistics
 docker compose run --rm loadgen-logistics
 ```
