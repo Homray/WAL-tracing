@@ -1,0 +1,110 @@
+# Multi-DB example: все три сервиса имеют прямой доступ к PostgreSQL.
+#
+# Топология:
+#   loadgen ──► user-service    ──► PostgreSQL (таблица users)
+#           ──► product-service ──► PostgreSQL (таблица products)
+#           ──► review-service  ──► PostgreSQL (таблица reviews)
+#
+# В отличие от basic (единый repo) и chain (единый store-service),
+# здесь каждый сервис самостоятельно вызывает waltracer.ApplyContext
+# с собственным именем компонента.
+#
+# Usage:
+#   docker compose up --build
+#   docker compose --profile loadgen up
+#   docker compose --profile tracing run wal-analyzer
+
+name: wal-tracing-multi-db
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: appdb
+    ports:
+      - "${DB_HOST_PORT:-5435}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  user-service:
+    build:
+      context: ../..
+      dockerfile: examples/multi-db/user-service/Dockerfile
+    environment:
+      DB_DSN: postgres://app:app@db:5432/appdb?sslmode=disable
+      WALTRACER_ENABLED: ${WALTRACER_ENABLED:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8094:8094"
+
+  product-service:
+    build:
+      context: ../..
+      dockerfile: examples/multi-db/product-service/Dockerfile
+    environment:
+      DB_DSN: postgres://app:app@db:5432/appdb?sslmode=disable
+      WALTRACER_ENABLED: ${WALTRACER_ENABLED:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8095:8095"
+
+  review-service:
+    build:
+      context: ../..
+      dockerfile: examples/multi-db/review-service/Dockerfile
+    environment:
+      DB_DSN: postgres://app:app@db:5432/appdb?sslmode=disable
+      WALTRACER_ENABLED: ${WALTRACER_ENABLED:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8096:8096"
+
+  wal-analyzer:
+    build:
+      context: ../..
+      dockerfile: cmd/wal-analyzer/Dockerfile
+    environment:
+      DB_DSN: postgres://app:app@db:5432/appdb?sslmode=disable
+      WAL_SLOT: wal_tracer_slot_multidb
+      INTERVAL: "5"
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tracing"]
+
+  loadgen:
+    build:
+      context: loadgen
+    environment:
+      USER_URL: http://user-service:8094
+      PRODUCT_URL: http://product-service:8095
+      REVIEW_URL: http://review-service:8096
+    depends_on:
+      - user-service
+      - product-service
+      - review-service
+    profiles: ["loadgen"]
+
+volumes:
+  pgdata:
