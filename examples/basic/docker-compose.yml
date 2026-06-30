@@ -1,0 +1,127 @@
+# Build context for all services is the project root so Dockerfiles can
+# copy the waltracer library alongside each service's code.
+#
+# Usage:
+#   docker compose up --build                         # start the app
+#   docker compose --profile loadgen up               # with load generators
+#   docker compose --profile tracing run wal-analyzer # start the analyzer
+
+name: wal-tracing-basic
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: appdb
+    ports:
+      - "${DB_HOST_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  repo:
+    build:
+      context: ../..
+      dockerfile: examples/basic/repo/Dockerfile
+    environment:
+      DB_DSN: postgres://app:app@db:5432/appdb?sslmode=disable
+      WALTRACER_ENABLED: ${WALTRACER_ENABLED:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8090:8090"
+
+  order-service:
+    build:
+      context: ../..
+      dockerfile: examples/basic/order-service/Dockerfile
+    environment:
+      REPO_URL: http://repo:8090
+    depends_on:
+      - repo
+    ports:
+      - "8081:8081"
+
+  executor-service:
+    build:
+      context: ../..
+      dockerfile: examples/basic/executor-service/Dockerfile
+    environment:
+      REPO_URL: http://repo:8090
+    depends_on:
+      - repo
+    ports:
+      - "8082:8082"
+
+  logistics-service:
+    build:
+      context: ../..
+      dockerfile: examples/basic/logistics-service/Dockerfile
+    environment:
+      REPO_URL: http://repo:8090
+    depends_on:
+      - repo
+    ports:
+      - "8083:8083"
+
+  wal-analyzer:
+    build:
+      context: ../..
+      dockerfile: cmd/wal-analyzer/Dockerfile
+    environment:
+      DB_DSN: postgres://app:app@db:5432/appdb?sslmode=disable
+      WAL_SLOT: wal_tracer_slot
+      INTERVAL: "5"
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tracing"]
+
+  loadgen-orders:
+    build:
+      context: loadgens/loadgen-orders
+    environment:
+      TARGET_URL: http://order-service:8081
+    depends_on:
+      - order-service
+    profiles: ["loadgen"]
+
+  loadgen-executors:
+    build:
+      context: loadgens/loadgen-executors
+    environment:
+      TARGET_URL: http://executor-service:8082
+    depends_on:
+      - executor-service
+    profiles: ["loadgen"]
+
+  loadgen-logistics:
+    build:
+      context: loadgens/loadgen-logistics
+    environment:
+      ORDER_URL: http://order-service:8081
+      EXECUTOR_URL: http://executor-service:8082
+      LOGISTICS_URL: http://logistics-service:8083
+    depends_on:
+      - logistics-service
+      - order-service
+      - executor-service
+    profiles: ["loadgen"]
+
+volumes:
+  pgdata:

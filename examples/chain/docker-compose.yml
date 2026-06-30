@@ -1,0 +1,95 @@
+# Chain example: loadgen → api-gateway → catalog-service → store-service → PostgreSQL
+#
+# Only store-service touches PostgreSQL; all tracing context flows via HTTP headers.
+#
+# Usage:
+#   docker compose up --build
+#   docker compose --profile loadgen up    # add load generator
+#   docker compose --profile tracing run wal-analyzer
+
+name: wal-tracing-chain
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: appdb
+    ports:
+      - "${DB_HOST_PORT:-5434}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  store-service:
+    build:
+      context: ../..
+      dockerfile: examples/chain/store-service/Dockerfile
+    environment:
+      DB_DSN: postgres://app:app@db:5432/appdb?sslmode=disable
+      WALTRACER_ENABLED: ${WALTRACER_ENABLED:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8093:8093"
+
+  catalog-service:
+    build:
+      context: ../..
+      dockerfile: examples/chain/catalog-service/Dockerfile
+    environment:
+      STORE_URL: http://store-service:8093
+    depends_on:
+      - store-service
+    ports:
+      - "8092:8092"
+
+  api-gateway:
+    build:
+      context: ../..
+      dockerfile: examples/chain/api-gateway/Dockerfile
+    environment:
+      CATALOG_URL: http://catalog-service:8092
+    depends_on:
+      - catalog-service
+    ports:
+      - "8091:8091"
+
+  wal-analyzer:
+    build:
+      context: ../..
+      dockerfile: cmd/wal-analyzer/Dockerfile
+    environment:
+      DB_DSN: postgres://app:app@db:5432/appdb?sslmode=disable
+      WAL_SLOT: wal_tracer_slot_chain
+      INTERVAL: "5"
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tracing"]
+
+  loadgen:
+    build:
+      context: loadgen
+    environment:
+      TARGET_URL: http://api-gateway:8091
+    depends_on:
+      - api-gateway
+    profiles: ["loadgen"]
+
+volumes:
+  pgdata:
